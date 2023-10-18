@@ -1,0 +1,15 @@
+[package]
+name = "sph_notificator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.11.20", features = ["blocking", "cookies"] }
+reqwest_cookie_store = "0.6.0"
+scraper = "0.17.1"
+serde = { version = "1.0.105", features = ["derive"] }
+serde_json="1.0.105"
+serde_yaml = "0.9.25"
+postgres = "0.19.6"
