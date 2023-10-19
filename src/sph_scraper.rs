@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use reqwest::{Error, header, Proxy};
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest_cookie_store::{CookieStore, CookieStoreMutex};

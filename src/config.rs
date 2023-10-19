@@ -1,5 +1,4 @@
 use std::fmt::Error;
-use serde_yaml::Value;
 
 #[derive(Debug, Clone)]
 pub struct Configuration{

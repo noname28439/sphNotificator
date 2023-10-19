@@ -1,10 +1,7 @@
 use std::fmt::Debug;
 use std::ops::{Add, Sub};
 use std::time::Duration;
-use chrono::format::{DelayedFormat, StrftimeItems};
-use chrono::{DateTime, Local};
 use log::{info, Level};
-use simple_logger::SimpleLogger;
 use crate::config::Configuration;
 use crate::notification_bot::Bot;
 
@@ -19,13 +16,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     simple_logger::init_with_level(Level::Info).unwrap();
 
     let config = Configuration::load()?;
+    let tick_delay = config.tick_interval;
     info!("Starting with config: {:?}", config);
 
     let mut b = Bot::new(config);
 
     loop {
         let _ = b.tick().expect("tick failed :(");
-        std::thread::sleep(Duration::from_secs(5*60));
+        std::thread::sleep(Duration::from_secs((tick_delay * 60) as u64));
     }
 
 }
