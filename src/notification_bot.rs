@@ -1,58 +1,32 @@
 use std::fmt::Error;
+use chrono::{DateTime, Local};
+use chrono::format::{DelayedFormat, StrftimeItems};
+use log::info;
 use postgres::{Client, NoTls};
 use serde_json::{json, Value};
+use crate::config::Configuration;
+use crate::messenger::Messenger;
 use crate::sph_scraper::{SphAuthentication, SphClient};
-
-fn send_message(uid:i64, text:&str) -> Result<bool, Box<dyn std::error::Error>>{
-
-    let payload = json!({
-        "authtoken": "xSqeogeoot1OkujAFRNH",
-        "userID": uid,
-        "message": text
-    });
-
-    let client = reqwest::blocking::Client::builder().build()?;
-
-    let response_text = client.get("http://192.168.178.45:30080/api/").body(serde_json::to_string(&payload)?).send()?.text()?;
-    let response_json:Value = serde_json::from_str(&response_text)?;
-
-    let success = response_json["success"].as_bool().ok_or(Error)?;
-
-    Ok(success)
-}
-
-fn build_text(entry:&Vec<Value>) -> Option<String>{
-    return if entry[3].as_str()? == "Selbststudium" && entry[7].as_str()?.contains("Entfall") {
-        Some(format!("**:no_entry:   {} entfällt! (Stunde {} bei {})**", entry[4].as_str()?, entry[0].as_str()?, entry[2].as_str()?))
-    } else if entry[3].as_str()? == "Raum" {
-        Some(format!("**:globe_with_meridians:   Raumwechsel in {} bei {} ({}. Stunde)**
-    `{} -> {}`", entry[4].as_str()?, entry[2].as_str()?, entry[0].as_str()?, entry[6].as_str()?, entry[5].as_str()?))
-    } else {
-        Some(format!("**:warning:   Neuer, Dich betreffender, Vertretungsplan-Eintrag:**```fix
-    Fach: {}
-    Stunde: {}
-    Lehrkraft: {}
-    Art: {}
-    Hinweis: {}```", entry[4], entry[0], entry[2], entry[3], entry[7]))
-    }
-}
 
 pub struct Bot{
     database: Client,
     sph_client: SphClient,
     sph_session: SphAuthentication,
-    sph_accountdata: (String, String),
     cached_subplan: Vec<Value>,
+    message_provider: Messenger,
+    config: Configuration,
 }
 
 impl Bot {
-    pub fn new(username:String, password:String, db_credentials:String)->Self{
+
+    pub fn new(config:Configuration)->Self{
         Bot{
-            database: Client::connect(&*db_credentials, NoTls).expect("Connection failed..."),
+            database: Client::connect(&*config.database_credentials, NoTls).expect("Connection failed..."),
             sph_client: SphClient::new(),
             sph_session: SphAuthentication::from_token("12er6344rfe6l92iomhurtaha6-30565e48893def14141426285be6922b02d1590233f96e4ec37c7b5c565bb4ce"),
-            sph_accountdata: (username, password),
             cached_subplan: vec![],
+            message_provider: Messenger::new(&*config.messenger_endpoint, &*config.messenger_token),
+            config
         }
     }
 
@@ -64,20 +38,24 @@ impl Bot {
         for affected in affected_accounts{
             let uid:i64 = affected.get(0);
 
-            let _success = send_message(uid, &*build_text(&entry).ok_or(Error)?).expect("message send crash");
+            let _success = self.message_provider.send_message(uid, &*super::messenger::build_text(&entry).ok_or(Error)?).expect("message send failed");
 
         }
         Ok(())
     }
 
+    fn format_date(&self, date:&DateTime<Local>) -> String {
+        date.format("%d_%m_%Y").to_string()
+    }
+
     pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>>{
         //Check if session in active
         if !self.sph_client.check_validity(&self.sph_session)? {
-            self.sph_session = self.sph_client.login(&*self.sph_accountdata.0, &*self.sph_accountdata.1)?;
-            println!("New Session: {}", self.sph_session.as_token());
+            self.sph_session = self.sph_client.login(&*self.config.sph_cred_username, &*self.config.sph_cred_password)?;
+            info!("New Session: {}", self.sph_session.as_token());
         }
 
-        let sub_plan = self.sph_client.pulldown_subplan(&self.sph_session, "18_10_2023")?;
+        let sub_plan = self.sph_client.pulldown_subplan(&self.sph_session, &*self.format_date(&chrono::Local::now()))?;  //TODO: use current date
         let sub_plan = sub_plan.as_array().ok_or(Error)?;
 
         for entry in sub_plan{
