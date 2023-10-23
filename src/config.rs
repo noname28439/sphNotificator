@@ -11,7 +11,19 @@ pub struct Configuration{
 }
 
 impl Configuration {
-    pub fn load()->Result<Self, Box<dyn std::error::Error>>{
+
+    pub fn from_env()->Result<Self, Box<dyn std::error::Error>>{
+        Ok(Configuration{
+            tick_interval: std::env::var("sph_tick_interval")?.parse::<i64>()?,
+            sph_cred_username: std::env::var("sph_credentials_username")?,
+            sph_cred_password: std::env::var("sph_credentials_password")?,
+            database_credentials: std::env::var("sph_db_connection")?,
+            messenger_token: std::env::var("sph_messenger_access_token")?,
+            messenger_endpoint: std::env::var("sph_messenger_endpoint")?,
+        })
+    }
+
+    pub fn from_file()->Result<Self, Box<dyn std::error::Error>>{
 
         let unpack_string =|val:&serde_json::Value| -> String {
             String::from(val.as_str().ok_or("").unwrap())

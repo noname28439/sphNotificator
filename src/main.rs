@@ -11,11 +11,11 @@ mod messenger;
 mod config;
 
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
+fn main() {
 
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    let config = Configuration::load()?;
+    let config = Configuration::from_env().unwrap();
     let tick_delay = config.tick_interval;
     info!("Starting with config: {:?}", config);
 

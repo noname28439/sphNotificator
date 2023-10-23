@@ -80,7 +80,7 @@ impl Bot {
 
             }
         }
-        self.handle_date_change(&"01_01_1999".to_string());
+
         Ok(())
     }
 
