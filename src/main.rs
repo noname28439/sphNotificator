@@ -15,7 +15,7 @@ fn main() {
 
     simple_logger::init_with_level(Level::Info).unwrap();
 
-    let config = Configuration::from_env().unwrap();
+    let config = Configuration::from_file().unwrap();
     let tick_delay = config.tick_interval;
     info!("Starting with config: {:?}", config);
 

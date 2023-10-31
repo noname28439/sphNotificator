@@ -37,7 +37,6 @@ impl Bot {
     fn handle_new_entry(&mut self, entry:&Vec<Value>) -> Result<(), Box<dyn std::error::Error>>{
         let class = entry.get(4).ok_or(Error)?.as_str().ok_or(Error)?;
 
-
         let affected_accounts = self.database.query("SELECT discord_userid FROM sph_notifications WHERE classes LIKE $1", &[&format!("%{}%", &class)])?;
         for affected in affected_accounts{
             let uid:i64 = affected.get(0);
@@ -60,6 +59,7 @@ impl Bot {
         if current_date!=self.date {
             self.handle_date_change(&current_date);
             self.date = current_date;
+            self.cached_subplan = vec![];
         }
 
         //Check if session in active
@@ -75,6 +75,8 @@ impl Bot {
             if !self.cached_subplan.contains(entry) {
                 self.cached_subplan.push(entry.clone());
                 let entry = entry.as_array().ok_or(Error)?;
+
+                info!("Detected new Entry {:?}", entry);
 
                 self.handle_new_entry(entry).unwrap();
 
