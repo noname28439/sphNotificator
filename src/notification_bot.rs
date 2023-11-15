@@ -1,5 +1,6 @@
 use std::alloc::handle_alloc_error;
 use std::fmt::Error;
+use std::time::Duration;
 use chrono::{DateTime, Local, NaiveDate};
 use log::info;
 use postgres::{Client, NoTls};
@@ -55,6 +56,14 @@ impl Bot {
     }
 
     pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>>{
+
+        //prevent connection reset by peer by reopening the connection on timeout
+        if self.database.is_valid(Duration::from_secs(15)).is_err() {
+            info!("Reconnecting to database");
+            self.database = Client::connect(&*self.config.database_credentials, NoTls).expect("Connection failed...")
+        }
+
+
         let current_date = format_date(&Local::now());
         if current_date!=self.date {
             self.handle_date_change(&current_date);
