@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::ops::{Add, Sub};
 use std::time::Duration;
-use log::{info, Level};
+use log::{error, info, Level};
 use crate::config::Configuration;
 use crate::notification_bot::Bot;
 
@@ -22,7 +22,12 @@ fn main() {
     let mut b = Bot::new(config);
 
     loop {
-        let _ = b.tick().expect("tick failed :(");
+        match b.tick(){
+            Ok(v)=>{},
+            Err(e)=>{
+                error!("{}", e);
+            }
+        }
         std::thread::sleep(Duration::from_secs((tick_delay * 60) as u64));
     }
 
