@@ -1,7 +1,7 @@
 use std::alloc::handle_alloc_error;
 use std::fmt::Error;
 use std::time::Duration;
-use chrono::{DateTime, Local, NaiveDate};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, Utc};
 use log::info;
 use postgres::{Client, NoTls};
 use serde_json::{json, Value};
@@ -15,9 +15,7 @@ pub struct Bot{
     database: Client,
     sph_client: SphClient,
     sph_session: SphAuthentication,
-    cached_subplan: Vec<Value>,
     message_provider: Messenger,
-    date:String,
     config: Configuration,
 }
 
@@ -28,8 +26,6 @@ impl Bot {
             database: Client::connect(&*config.database_credentials, NoTls).expect("Connection failed..."),
             sph_client: SphClient::new(),
             sph_session: SphAuthentication::empty(),
-            cached_subplan: vec![],
-            date: format_date(&Local::now()),
             message_provider: Messenger::new(&*config.messenger_endpoint, &*config.messenger_token),
             config
         }
@@ -38,37 +34,46 @@ impl Bot {
     fn handle_new_entry(&mut self, entry:&Vec<Value>) -> Result<(), Box<dyn std::error::Error>>{
         let class = entry.get(4).ok_or(Error)?.as_str().ok_or(Error)?;
 
-        let affected_accounts = self.database.query("SELECT discord_userid FROM sph_notifications WHERE classes LIKE $1", &[&format!("%{}%", &class)])?;
+        let affected_accounts = self.database.query("SELECT discord_userid, name FROM sph_notifications WHERE classes LIKE $1", &[&format!("%{}%", &class)])?;
+        self.database.execute("insert into subplan_entries values ($1, $2)", &[&Utc::now().naive_utc(), &json!(entry)])?;
         for affected in affected_accounts{
             let uid:i64 = affected.get(0);
-
-            let _success = self.message_provider.send_message(uid, &*super::messenger::build_text(&entry).ok_or(Error)?).expect("message send failed");
-
+            let name:String = affected.get(1);
+            let success = self.message_provider.send_message(uid, &*super::messenger::build_text(&entry).ok_or(Error)?)?;
+            info!("notifying {}... success:{}", name, success);
         }
         Ok(())
     }
 
-    fn handle_date_change(&mut self, new_date:&String){
-        info!("Date changed from {} to {}", self.date, new_date);
-        self.database.execute("INSERT INTO subplan_dumps VALUES ($1, $2)", &[
-            &NaiveDate::parse_from_str(&self.date, DATE_FORMATTER).unwrap(),
-            &json!(self.cached_subplan)]).expect("plan dump failed");
-    }
+    fn check_subplan(&mut self) -> Result<(), Box<dyn std::error::Error>>{
+        let sub_plan = self.sph_client.pulldown_subplan(&self.sph_session, &*subplan_format_date(&Local::now()))?;
+        let sub_plan = sub_plan.as_array().ok_or(Error)?;
 
-    pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>>{
+        let already_detected_entries = self.database.query("select * from subplan_entries where date_trunc('day', detection) = date_trunc('day', now())", &[])?;
+        let already_detected = |check:&Value|->bool{
+            for cr in &already_detected_entries{
+                let cmp:Value = cr.get(1);
+                if &cmp == check {return true;}
+            }
+            return false;
+        };
 
-        //prevent connection reset by peer by reopening the connection on timeout
-        if self.database.is_valid(Duration::from_secs(15)).is_err() {
-            info!("Reconnecting to database");
-            self.database = Client::connect(&*self.config.database_credentials, NoTls).expect("Connection failed...")
+        for entry in sub_plan{
+            if !already_detected(entry) {
+                let entry = entry.as_array().ok_or(Error)?;
+                info!("Detected new Entry {:?}", entry);
+
+                self.handle_new_entry(entry).unwrap();
+            }
         }
 
+        Ok(())
+    }
 
-        let current_date = format_date(&Local::now());
-        if current_date!=self.date {
-            self.handle_date_change(&current_date);
-            self.date = current_date;
-            self.cached_subplan = vec![];
+    fn check_sessions(&mut self) -> Result<(), Box<dyn std::error::Error>>{
+        if self.database.is_valid(Duration::from_secs(15)).is_err() {
+            info!("Reconnecting to database...");
+            self.database = Client::connect(&*self.config.database_credentials, NoTls).expect("Connection failed...")
         }
 
         //Check if session in active
@@ -76,41 +81,21 @@ impl Bot {
             self.sph_session = self.sph_client.login(&*self.config.sph_cred_username, &*self.config.sph_cred_password)?;
             info!("New Session: {}", self.sph_session.as_token());
         }
+        Ok(())
+    }
 
-        let sub_plan = self.sph_client.pulldown_subplan(&self.sph_session, &*format_date(&Local::now()))?;
-        let sub_plan = sub_plan.as_array().ok_or(Error)?;
 
-        for entry in sub_plan{
-            if !self.cached_subplan.contains(entry) {
-                self.cached_subplan.push(entry.clone());
-                let entry = entry.as_array().ok_or(Error)?;
+    pub fn tick(&mut self) -> Result<(), Box<dyn std::error::Error>>{
 
-                info!("Detected new Entry {:?}", entry);
-
-                self.handle_new_entry(entry).unwrap();
-
-            }
-        }
+        self.check_sessions()?;
+        self.check_subplan()?;
 
         Ok(())
     }
 
-    pub fn _test(&mut self) -> Result<(), Box<dyn std::error::Error>>{
-        let res = self.database.query("SELECT * FROM sph_notifications", &[])?;
-        for row in res{
-            let name:String = row.get(0);
-            let discord_uid:i64 = row.get(1);
-            let classes:String = row.get(2);
-
-
-        }
-
-
-        Ok(())
-    }
 }
 
 
-pub fn format_date(date:&DateTime<Local>) -> String {
+pub fn subplan_format_date(date:&DateTime<Local>) -> String {
     date.format(DATE_FORMATTER).to_string()
 }
