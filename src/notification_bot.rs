@@ -2,7 +2,7 @@ use std::alloc::handle_alloc_error;
 use std::fmt::Error;
 use std::time::Duration;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, Utc};
-use log::info;
+use log::{info, warn};
 use postgres::{Client, NoTls};
 use serde_json::{json, Value};
 use crate::config::Configuration;
@@ -33,6 +33,10 @@ impl Bot {
 
     fn handle_new_entry(&mut self, entry:&Vec<Value>) -> Result<(), Box<dyn std::error::Error>>{
         let class = entry.get(4).ok_or(Error)?.as_str().ok_or(Error)?;
+        if class==""  {
+            warn!("Empty class field...");
+            return Ok(())
+        }
 
         let affected_accounts = self.database.query("SELECT discord_userid, name FROM sph_notifications WHERE classes LIKE $1", &[&format!("%{}%", &class)])?;
         self.database.execute("insert into subplan_entries values ($1, $2)", &[&Utc::now().naive_utc(), &json!(entry)])?;
