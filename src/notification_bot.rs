@@ -39,7 +39,7 @@ impl Bot {
         }
 
         let affected_accounts = self.database.query("SELECT discord_userid, name FROM sph_notifications WHERE classes LIKE $1", &[&format!("%{}%", &class)])?;
-        self.database.execute("insert into subplan_entries values ($1, $2)", &[&Utc::now().naive_utc(), &json!(entry)])?;
+        self.database.execute("insert into subplan_entries values ($1, $2)", &[&Local::now().naive_local(), &json!(entry)])?;
         for affected in affected_accounts{
             let uid:i64 = affected.get(0);
             let name:String = affected.get(1);
@@ -53,7 +53,7 @@ impl Bot {
         let sub_plan = self.sph_client.pulldown_subplan(&self.sph_session, &*subplan_format_date(&Local::now()))?;
         let sub_plan = sub_plan.as_array().ok_or(Error)?;
 
-        let already_detected_entries = self.database.query("select * from subplan_entries where date_trunc('day', detection) = date_trunc('day', now())", &[])?;
+        let already_detected_entries = self.database.query("select * from subplan_entries where date_trunc('day', detection) = date_trunc('day', $1::timestamp)", &[&Local::now().naive_local()])?;
         let already_detected = |check:&Value|->bool{
             for cr in &already_detected_entries{
                 let cmp:Value = cr.get(1);
